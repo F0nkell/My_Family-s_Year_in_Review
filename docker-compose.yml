@@ -1,9 +1,10 @@
-version: '3.8'
 
 services:
   family-year-app:
     build: .
     container_name: family-year-container
     ports:
-      - "8080:80" # Сайт будет доступен по адресу localhost:8080
+      - "8080:3000" # Сайт будет доступен по адресу localhost:8080
     restart: always
+    volumes:
+      - ./data:/app/data

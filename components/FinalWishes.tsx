@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FamilyMember } from '../constants';
@@ -9,51 +8,35 @@ interface FinalWishesProps {
   onRestart: () => void;
 }
 
+// Расширяем глобальный объект window для TypeScript, чтобы он знал про Telegram
+declare global {
+  interface Window {
+    Telegram: any;
+  }
+}
+
 const FlyingPigeon = () => (
   <div className="relative w-48 h-48 md:w-64 md:h-64">
     <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-2xl">
-      {/* Тело */}
       <path d="M100 110 C 100 85, 150 85, 160 110 C 160 135, 140 145, 110 145 C 80 145, 70 135, 70 115" fill="#f8f9fa" stroke="#4a4a4a" strokeWidth="1.5" />
       <path d="M110 100 C 130 100, 155 110, 160 130 L 140 135 C 130 120, 110 115, 110 115 Z" fill="#b0b5b9" stroke="#4a4a4a" strokeWidth="1.5" />
-      
-      {/* Крыло верхнее (анимированное) */}
       <motion.path 
         d="M130 95 C 110 70, 100 50, 120 40 C 140 30, 160 50, 150 80 Z" 
-        fill="#f8f9fa" 
-        stroke="#4a4a4a" 
-        strokeWidth="1.5"
-        animate={{ d: [
-          "M130 95 C 110 70, 100 50, 120 40 C 140 30, 160 50, 150 80 Z",
-          "M130 95 C 120 85, 130 80, 145 75 C 160 70, 170 85, 150 95 Z"
-        ]}}
+        fill="#f8f9fa" stroke="#4a4a4a" strokeWidth="1.5"
+        animate={{ d: ["M130 95 C 110 70, 100 50, 120 40 C 140 30, 160 50, 150 80 Z", "M130 95 C 120 85, 130 80, 145 75 C 160 70, 170 85, 150 95 Z"]}}
         transition={{ duration: 0.3, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
       />
-
-      {/* Голова */}
       <circle cx="85" cy="85" r="25" fill="#f8f9fa" stroke="#4a4a4a" strokeWidth="1.5" />
       <circle cx="80" cy="80" r="2.5" fill="#000" />
       <path d="M72 82 L65 85 L72 88 Z" fill="#4a4a4a" />
-
-      {/* Шапочка */}
       <path d="M65 75 C 65 55, 105 55, 105 75 L 105 82 L 65 82 Z" fill="#9ec1c1" stroke="#4a4a4a" strokeWidth="1.5" />
       <circle cx="85" cy="55" r="5" fill="#9ec1c1" stroke="#4a4a4a" strokeWidth="1.5" />
-
-      {/* Шарфик */}
       <path d="M65 100 C 65 92, 110 92, 110 100 L 110 115 L 65 115 Z" fill="#fcf5e5" stroke="#4a4a4a" strokeWidth="1.5" />
       <motion.path 
-        d="M110 105 C 130 100, 160 100, 175 105" 
-        fill="none" 
-        stroke="#fcf5e5" 
-        strokeWidth="12" 
-        strokeLinecap="round"
-        animate={{ d: [
-          "M110 105 C 130 100, 160 100, 175 105",
-          "M110 105 C 130 110, 160 115, 175 120"
-        ]}}
+        d="M110 105 C 130 100, 160 100, 175 105" fill="none" stroke="#fcf5e5" strokeWidth="12" strokeLinecap="round"
+        animate={{ d: ["M110 105 C 130 100, 160 100, 175 105", "M110 105 C 130 110, 160 115, 175 120"]}}
         transition={{ duration: 1.5, repeat: Infinity, repeatType: "mirror" }}
       />
-      
-      {/* Лапки */}
       <path d="M100 145 L95 155 M115 145 L110 155" stroke="#e67e80" strokeWidth="3" strokeLinecap="round" />
     </svg>
   </div>
@@ -62,7 +45,21 @@ const FlyingPigeon = () => (
 const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) => {
   const [step, setStep] = useState<'writing' | 'folding' | 'bird' | 'done'>('writing');
   const [countdown, setCountdown] = useState("");
+  const [userText, setUserText] = useState(wish);
 
+  // Инициализация Telegram Web App
+  useEffect(() => {
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.ready();
+      try {
+        window.Telegram.WebApp.expand(); // Раскрываем на весь экран
+      } catch (e) {
+        console.log("Not in TWA");
+      }
+    }
+  }, []);
+
+  // Таймер обратного отсчета
   useEffect(() => {
     const updateCountdown = () => {
       const now = new Date();
@@ -79,7 +76,33 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
     return () => clearInterval(timer);
   }, []);
 
-  const handleSend = () => {
+  const handleSend = async () => {
+    if (!userText.trim()) return;
+
+    // 1. Попытка отправки данных на сервер (если мы в Телеграм)
+    try {
+      const tg = window.Telegram?.WebApp;
+      const user = tg?.initDataUnsafe?.user;
+
+      if (user) {
+        await fetch('/api/save-letter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            username: user.first_name || user.username || 'Член семьи',
+            text: userText
+          })
+        });
+      } else {
+        console.warn("Пользователь не авторизован через Telegram, письмо не сохранено в базу.");
+      }
+    } catch (e) {
+      console.error("Ошибка при отправке письма:", e);
+      // Мы не прерываем анимацию, даже если сеть упала, чтобы не портить впечатление
+    }
+
+    // 2. Запуск анимаций (как и было раньше)
     setStep('folding');
     setTimeout(() => setStep('bird'), 2000);
     setTimeout(() => setStep('done'), 7500);
@@ -88,29 +111,42 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
   return (
     <div className="flex flex-col items-center justify-center min-h-[90vh] w-full max-w-3xl mx-auto px-4 py-8 overflow-hidden">
       <AnimatePresence mode="wait">
+        
+        {/* ШАГ 1: НАПИСАНИЕ ПИСЬМА */}
         {step === 'writing' && (
           <motion.div 
             key="paper"
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ rotateX: 90, opacity: 0, scale: 0.8 }}
-            className="paper-texture p-8 md:p-20 shadow-2xl w-full border border-slate-100 relative rounded-sm"
+            className="paper-texture p-8 md:p-16 shadow-2xl w-full border border-slate-100 relative rounded-sm min-h-[60vh] flex flex-col"
           >
-            <h2 className="text-4xl md:text-5xl font-handwriting text-emerald-950 mb-10 border-b border-emerald-900/10 pb-4 tracking-tighter">
-              Семейное письмо
+            <h2 className="text-3xl md:text-5xl font-handwriting text-emerald-950 mb-6 border-b border-emerald-900/10 pb-4 tracking-tighter shrink-0">
+              Письмо в будущее
             </h2>
-            <p className="text-2xl md:text-3xl font-handwriting text-slate-700 leading-relaxed mb-16 italic">
-              {wish}
-            </p>
-            <button
-              onClick={handleSend}
-              className="w-full bg-emerald-950 hover:bg-emerald-900 text-white font-bold py-6 rounded-sm shadow-xl transition-all transform hover:-translate-y-1 active:scale-95 uppercase tracking-[0.4em] text-xs"
-            >
-              Передать голубю
-            </button>
+            
+            {/* Поле ввода текста */}
+            <textarea
+              value={userText}
+              onChange={(e) => setUserText(e.target.value)}
+              placeholder="Напишите здесь ваше пожелание..."
+              className="flex-1 w-full bg-transparent border-none resize-none outline-none focus:ring-0 text-xl md:text-3xl font-handwriting text-slate-700 leading-relaxed italic placeholder:text-slate-300"
+              spellCheck={false}
+            />
+
+            <div className="mt-8 flex justify-end shrink-0">
+              <button
+                onClick={handleSend}
+                disabled={!userText.trim()}
+                className="bg-emerald-950 hover:bg-emerald-900 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 px-8 rounded-sm shadow-xl transition-all transform hover:-translate-y-1 active:scale-95 uppercase tracking-[0.2em] text-xs"
+              >
+                Запечатать и отправить
+              </button>
+            </div>
           </motion.div>
         )}
 
+        {/* ШАГ 2: КОНВЕРТ */}
         {step === 'folding' && (
           <motion.div 
             key="folding"
@@ -127,6 +163,7 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
           </motion.div>
         )}
 
+        {/* ШАГ 3: ПОЛЕТ */}
         {step === 'bird' && (
           <motion.div 
             key="bird-flight"
@@ -139,7 +176,6 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
               className="relative flex items-center scale-x-[-1]"
             >
               <FlyingPigeon />
-              {/* Конверт в клюве */}
               <div className="absolute top-[45%] right-[-5%] w-24 h-16 bg-white envelope-edge p-[2px] shadow-xl rotate-[15deg]">
                  <div className="w-full h-full bg-white flex items-center justify-center">
                     <div className="w-3 h-3 rounded-full bg-red-700 opacity-30"></div>
@@ -152,6 +188,7 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
           </motion.div>
         )}
 
+        {/* ШАГ 4: ФИНАЛ */}
         {step === 'done' && (
           <motion.div 
             key="done"
@@ -161,7 +198,7 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
           >
             <div className="text-emerald-950 font-serif text-4xl md:text-6xl mb-8">Письмо в пути!</div>
             <p className="text-slate-600 mb-12 max-w-sm mx-auto text-lg leading-relaxed font-light">
-              Ваш почтовый голубь уже пересекает границы времени. Конверт будет открыт ровно в полночь.
+              Ваши теплые слова уже пересекают границы времени. Конверт будет открыт ровно в полночь.
             </p>
             <div className="bg-emerald-900/5 p-12 rounded-2xl border border-emerald-900/10 mb-12">
               <div className="text-xs tracking-[0.4em] text-emerald-800 uppercase mb-4 font-bold">Осталось подождать:</div>

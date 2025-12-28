@@ -1,29 +1,29 @@
-# Этап 1: Сборка (Build)
+# Этап 1: Сборка фронтенда
 FROM node:20-alpine as build
-
 WORKDIR /app
-
-# Копируем файлы зависимостей
 COPY package*.json ./
-
-# Устанавливаем зависимости
 RUN npm install
-
-# Копируем остальные файлы проекта
 COPY . .
-
-# Собираем проект (создается папка dist)
 RUN npm run build
 
-# Этап 2: Запуск (Serve)
-FROM nginx:alpine
+# Этап 2: Запуск сервера
+FROM node:20-alpine
+WORKDIR /app
 
-# Копируем собранные файлы из предыдущего этапа в папку Nginx
-COPY --from=build /app/dist /usr/share/nginx/html
+# Копируем зависимости
+COPY package*.json ./
+RUN npm install --production
 
-# Копируем наш конфиг Nginx
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Копируем собранный фронтенд из этапа 1
+COPY --from=build /app/dist ./dist
 
-EXPOSE 80
+# Копируем файл сервера
+COPY server.js .
 
-CMD ["nginx", "-g", "daemon off;"]
+# Создаем папку для базы данных
+RUN mkdir data
+
+EXPOSE 3000
+
+# Запускаем сервер
+CMD ["node", "server.js"]
