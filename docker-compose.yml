@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  family-year-app:
+    build: .
+    container_name: family-year-container
+    ports:
+      - "8080:80" # Сайт будет доступен по адресу localhost:8080
+    restart: always
