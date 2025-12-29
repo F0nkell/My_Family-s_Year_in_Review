@@ -1,10 +1,10 @@
 // Импортируем медиа (фото и видео)
 // Убедитесь, что пути совпадают с вашими файлами в папке assets/media
 import media1 from './assets/media/1.mp4';
-import media2 from './assets/media/2.jpg'; // Пример видео
+import media2 from './assets/media/2.jpg';
 import media3 from './assets/media/3.jpg';
 import media4 from './assets/media/4.jpg';
-import media5 from './assets/media/5.jpg'; // Пример видео
+import media5 from './assets/media/5.jpg';
 import media6 from './assets/media/6.mp4';
 import media7 from './assets/media/7.jpg';
 import media8 from './assets/media/8.jpg';
