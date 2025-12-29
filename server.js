@@ -1,4 +1,4 @@
-import 'dotenv/config'; // Подключаем чтение .env файла
+import 'dotenv/config';
 import express from 'express';
 import { Telegraf } from 'telegraf';
 import fs from 'fs';
@@ -8,11 +8,9 @@ import cron from 'node-cron';
 
 // --- НАСТРОЙКИ ---
 const BOT_TOKEN = process.env.BOT_TOKEN;
-// ВАЖНО: Для облака (Render) обязательно использовать process.env.PORT
-const PORT = process.env.PORT || 3000; 
+const PORT = process.env.PORT || 3000;
 const DB_FILE = './data/letters.json';
 
-// Настройка путей для Node.js
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -27,7 +25,7 @@ const db = {
 
 // --- БОТ ---
 if (!BOT_TOKEN) {
-  console.error("ОШИБКА: Не найден BOT_TOKEN в .env файле или настройках сервера!");
+  console.error("ОШИБКА: Не найден BOT_TOKEN!");
   process.exit(1);
 }
 
@@ -37,13 +35,13 @@ bot.start((ctx) => {
   const data = db.read();
   const user = ctx.from;
   
-  // Сохраняем пользователя
   if (!data.users.find(u => u.id === user.id)) {
-    data.users.push({ id: user.id, name: user.first_name, username: user.username });
+    // По умолчанию ставим UTC, если он не откроет WebApp, но потом обновим
+    data.users.push({ id: user.id, name: user.first_name, username: user.username, timezone: 'UTC', sent: false });
     db.write(data);
     ctx.reply(`Привет, ${user.first_name}! Я сохранил тебя. Теперь открывай Web App и пиши письмо в будущее! 🎄`);
   } else {
-    ctx.reply(`С возвращением! Я готов принимать письма.`);
+    ctx.reply(`С возвращением! Письмо можно перезаписать в любой момент до Нового Года.`);
   }
 });
 
@@ -54,21 +52,29 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// API для сохранения письма
 app.post('/api/save-letter', (req, res) => {
-  const { userId, username, text } = req.body;
-  
+  const { userId, username, text, timezone } = req.body;
   if (!userId || !text) return res.sendStatus(400);
 
   const data = db.read();
   
-  // Перезаписываем письмо пользователя
+  // 1. Обновляем часовой пояс пользователя в базе пользователей
+  const userIndex = data.users.findIndex(u => u.id === userId);
+  if (userIndex >= 0) {
+      // Сохраняем таймзону (например 'Europe/Moscow') и сбрасываем флаг отправки
+      data.users[userIndex].timezone = timezone || 'UTC';
+      data.users[userIndex].sent = false; 
+  } else {
+      // Если вдруг пользователя нет (редкий случай), создаем
+      data.users.push({ id: userId, name: username, username, timezone: timezone || 'UTC', sent: false });
+  }
+
+  // 2. Сохраняем само письмо
   data.letters = data.letters.filter(l => l.userId !== userId);
   data.letters.push({ userId, username, text, date: new Date() });
   
   db.write(data);
-  console.log(`Письмо от ${username} сохранено!`);
-  
+  console.log(`Письмо от ${username} сохранено! (TZ: ${timezone})`);
   res.json({ success: true });
 });
 
@@ -76,45 +82,68 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// --- ПЛАНИРОВЩИК (ТЕСТОВЫЙ РЕЖИМ) ---
-// Запускается каждую минуту
+// --- УМНЫЙ ПЛАНИРОВЩИК (Мульти-Часовые Пояса) ---
 cron.schedule('* * * * *', async () => {
-  console.log("⏰ [ТЕСТ] Проверка рассылки...");
-  
-  // !!! ТЕСТОВЫЙ РЕЖИМ: МЫ УБРАЛИ ПРОВЕРКУ ДАТЫ !!!
-  // if (now.getFullYear() === 2026 ...) <-- Это закомментировано
-  
-  // Условие всегда true для проверки работы
-  if (true) {
-    const data = db.read();
-    
-    // Если писем нет, ничего не делаем
-    if (data.letters.length === 0) {
-        console.log("📭 Писем пока нет.");
-        return;
-    }
+  const data = db.read();
+  const now = new Date();
 
-    for (const recipient of data.users) {
-      let message = `🎄✨ **ТЕСТОВАЯ РАССЫЛКА (ПРОВЕРКА)** ✨🎄\n\nВот письма от твоей семьи:\n\n`;
-      let hasLetters = false;
+  // Логируем раз в час, что сервер жив
+  if (now.getMinutes() === 0) {
+      console.log(`⏳ Проверка времени для ${data.users.length} пользователей...`);
+  }
 
-      for (const letter of data.letters) {
-        if (letter.userId !== recipient.id) {
-          message += `📩 **От ${letter.username}:**\n"${letter.text}"\n\n`;
-          hasLetters = true;
-        }
+  for (const recipient of data.users) {
+      // Если этому пользователю уже отправили в этом году - пропускаем
+      if (recipient.sent) continue;
+
+      // Получаем текущее время В ЧАСОВОМ ПОЯСЕ ПОЛЬЗОВАТЕЛЯ
+      // Используем встроенный Intl для конвертации
+      let userTimeStr;
+      try {
+          userTimeStr = now.toLocaleString("en-US", { timeZone: recipient.timezone });
+      } catch (e) {
+          // Если таймзона кривая, используем UTC
+          userTimeStr = now.toLocaleString("en-US", { timeZone: "UTC" });
       }
+      
+      const userDate = new Date(userTimeStr);
 
-      // Отправляем только если есть чужие письма
-      if (hasLetters) {
-        try {
-          await bot.telegram.sendMessage(recipient.id, message, { parse_mode: 'Markdown' });
-          console.log(`✅ Отправлено пользователю: ${recipient.name}`);
-        } catch (e) {
-          console.error(`❌ Ошибка отправки для ${recipient.name}:`, e.message);
-        }
+      // ПРОВЕРКА: Наступил ли у НЕГО Новый Год? (2026, Январь, 1 число, 00:00)
+      if (userDate.getFullYear() === 2026 && userDate.getMonth() === 0 && userDate.getDate() === 1 && userDate.getHours() === 0 && userDate.getMinutes() === 0) {
+          
+          console.log(`🎆 НОВЫЙ ГОД У ПОЛЬЗОВАТЕЛЯ ${recipient.name} (${recipient.timezone})! ОТПРАВЛЯЮ...`);
+          
+          let message = `🎄✨ **С НОВЫМ 2026 ГОДОМ!** ✨🎄\n\nВ твоем городе пробили куранты! Вот письма от семьи:\n\n`;
+          let hasLetters = false;
+
+          for (const letter of data.letters) {
+            if (letter.userId !== recipient.id) {
+              message += `📩 **От ${letter.username}:**\n"${letter.text}"\n\n`;
+              hasLetters = true;
+            }
+          }
+
+          if (hasLetters) {
+            try {
+              await bot.telegram.sendMessage(recipient.id, message, { parse_mode: 'Markdown' });
+              console.log(`✅ Успешно отправлено: ${recipient.name}`);
+              
+              // Помечаем, что этому пользователю уже отправили
+              recipient.sent = true;
+              db.write(data);
+              
+            } catch (e) {
+              console.error(`❌ Ошибка отправки ${recipient.name}:`, e.message);
+            }
+          } else {
+             // Утешительное сообщение, если писем нет
+             try {
+                await bot.telegram.sendMessage(recipient.id, "🎄 С Новым Годом! К сожалению, письма от других пока не пришли, но мы поздравляем тебя!", { parse_mode: 'Markdown' });
+                recipient.sent = true;
+                db.write(data);
+             } catch(e) {}
+          }
       }
-    }
   }
 });
 

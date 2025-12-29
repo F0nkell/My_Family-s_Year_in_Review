@@ -8,7 +8,6 @@ interface FinalWishesProps {
   onRestart: () => void;
 }
 
-// Расширяем глобальный объект window для TypeScript, чтобы он знал про Telegram
 declare global {
   interface Window {
     Telegram: any;
@@ -47,19 +46,13 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
   const [countdown, setCountdown] = useState("");
   const [userText, setUserText] = useState(wish);
 
-  // Инициализация Telegram Web App
   useEffect(() => {
     if (window.Telegram?.WebApp) {
       window.Telegram.WebApp.ready();
-      try {
-        window.Telegram.WebApp.expand(); // Раскрываем на весь экран
-      } catch (e) {
-        console.log("Not in TWA");
-      }
+      try { window.Telegram.WebApp.expand(); } catch (e) {}
     }
   }, []);
 
-  // Таймер обратного отсчета
   useEffect(() => {
     const updateCountdown = () => {
       const now = new Date();
@@ -79,10 +72,13 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
   const handleSend = async () => {
     if (!userText.trim()) return;
 
-    // 1. Попытка отправки данных на сервер (если мы в Телеграм)
     try {
       const tg = window.Telegram?.WebApp;
       const user = tg?.initDataUnsafe?.user;
+
+      // ОПРЕДЕЛЯЕМ ЧАСОВОЙ ПОЯС ПОЛЬЗОВАТЕЛЯ
+      // Например: "Europe/Moscow" или "Asia/Yekaterinburg"
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
       if (user) {
         await fetch('/api/save-letter', {
@@ -91,18 +87,15 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
           body: JSON.stringify({
             userId: user.id,
             username: user.first_name || user.username || 'Член семьи',
-            text: userText
+            text: userText,
+            timezone: userTimezone // <-- ОТПРАВЛЯЕМ ЕГО НА СЕРВЕР
           })
         });
-      } else {
-        console.warn("Пользователь не авторизован через Telegram, письмо не сохранено в базу.");
       }
     } catch (e) {
-      console.error("Ошибка при отправке письма:", e);
-      // Мы не прерываем анимацию, даже если сеть упала, чтобы не портить впечатление
+      console.error("Ошибка при отправке:", e);
     }
 
-    // 2. Запуск анимаций (как и было раньше)
     setStep('folding');
     setTimeout(() => setStep('bird'), 2000);
     setTimeout(() => setStep('done'), 7500);
@@ -111,8 +104,6 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
   return (
     <div className="flex flex-col items-center justify-center min-h-[90vh] w-full max-w-3xl mx-auto px-4 py-8 overflow-hidden">
       <AnimatePresence mode="wait">
-        
-        {/* ШАГ 1: НАПИСАНИЕ ПИСЬМА */}
         {step === 'writing' && (
           <motion.div 
             key="paper"
@@ -124,8 +115,6 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
             <h2 className="text-3xl md:text-5xl font-handwriting text-emerald-950 mb-6 border-b border-emerald-900/10 pb-4 tracking-tighter shrink-0">
               Письмо в будущее
             </h2>
-            
-            {/* Поле ввода текста */}
             <textarea
               value={userText}
               onChange={(e) => setUserText(e.target.value)}
@@ -133,7 +122,6 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
               className="flex-1 w-full bg-transparent border-none resize-none outline-none focus:ring-0 text-xl md:text-3xl font-handwriting text-slate-700 leading-relaxed italic placeholder:text-slate-300"
               spellCheck={false}
             />
-
             <div className="mt-8 flex justify-end shrink-0">
               <button
                 onClick={handleSend}
@@ -145,8 +133,6 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
             </div>
           </motion.div>
         )}
-
-        {/* ШАГ 2: КОНВЕРТ */}
         {step === 'folding' && (
           <motion.div 
             key="folding"
@@ -162,8 +148,6 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
             </div>
           </motion.div>
         )}
-
-        {/* ШАГ 3: ПОЛЕТ */}
         {step === 'bird' && (
           <motion.div 
             key="bird-flight"
@@ -187,8 +171,6 @@ const FinalWishes: React.FC<FinalWishesProps> = ({ wish, members, onRestart }) =
             </div>
           </motion.div>
         )}
-
-        {/* ШАГ 4: ФИНАЛ */}
         {step === 'done' && (
           <motion.div 
             key="done"
