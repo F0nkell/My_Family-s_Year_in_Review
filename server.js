@@ -1,3 +1,4 @@
+import 'dotenv/config'; // Подключаем чтение .env файла
 import express from 'express';
 import { Telegraf } from 'telegraf';
 import fs from 'fs';
@@ -6,16 +7,16 @@ import { fileURLToPath } from 'url';
 import cron from 'node-cron';
 
 // --- НАСТРОЙКИ ---
-// Вставьте сюда токен, который дал BotFather
-const BOT_TOKEN = process.env.BOT_TOKEN || '8530299630:AAHhytyU9jXllQd_rW5qIt2z0p_InnJAEWM';
-const PORT = 3000;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+// ВАЖНО: Для облака (Render) обязательно использовать process.env.PORT
+const PORT = process.env.PORT || 3000; 
 const DB_FILE = './data/letters.json';
 
 // Настройка путей для Node.js
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- БАЗА ДАННЫХ (Простой JSON файл) ---
+// --- БАЗА ДАННЫХ ---
 if (!fs.existsSync('./data')) fs.mkdirSync('./data');
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ users: [], letters: [] }));
 
@@ -25,19 +26,24 @@ const db = {
 };
 
 // --- БОТ ---
+if (!BOT_TOKEN) {
+  console.error("ОШИБКА: Не найден BOT_TOKEN в .env файле или настройках сервера!");
+  process.exit(1);
+}
+
 const bot = new Telegraf(BOT_TOKEN);
 
 bot.start((ctx) => {
   const data = db.read();
   const user = ctx.from;
   
-  // Сохраняем пользователя, чтобы знать, кому рассылать
+  // Сохраняем пользователя
   if (!data.users.find(u => u.id === user.id)) {
     data.users.push({ id: user.id, name: user.first_name, username: user.username });
     db.write(data);
     ctx.reply(`Привет, ${user.first_name}! Я сохранил тебя. Теперь открывай Web App и пиши письмо в будущее! 🎄`);
   } else {
-    ctx.reply(`С возвращением! Ждем 2026 года...`);
+    ctx.reply(`С возвращением! Я готов принимать письма.`);
   }
 });
 
@@ -46,7 +52,7 @@ bot.launch();
 // --- СЕРВЕР ---
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'dist'))); // Раздаем наш React сайт
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // API для сохранения письма
 app.post('/api/save-letter', (req, res) => {
@@ -56,7 +62,7 @@ app.post('/api/save-letter', (req, res) => {
 
   const data = db.read();
   
-  // Удаляем старое письмо этого пользователя (если было) и пишем новое
+  // Перезаписываем письмо пользователя
   data.letters = data.letters.filter(l => l.userId !== userId);
   data.letters.push({ userId, username, text, date: new Date() });
   
@@ -66,41 +72,46 @@ app.post('/api/save-letter', (req, res) => {
   res.json({ success: true });
 });
 
-// Любой другой запрос возвращает index.html (для React Router)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// --- ПЛАНИРОВЩИК (Рассылка) ---
-// Проверка каждую минуту. Если наступило 1 января 2026 00:00
+// --- ПЛАНИРОВЩИК (ТЕСТОВЫЙ РЕЖИМ) ---
+// Запускается каждую минуту
 cron.schedule('* * * * *', async () => {
-  const now = new Date();
-  // ВАЖНО: Установите нужный год и время.
-  // Для теста можно поставить текущий год и ближайшую минуту.
-  if (now.getFullYear() === 2026 && now.getMonth() === 0 && now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
-    
-    console.log("⏰ ВРЕМЯ ПРИШЛО! НАЧИНАЮ РАССЫЛКУ...");
+  console.log("⏰ [ТЕСТ] Проверка рассылки...");
+  
+  // !!! ТЕСТОВЫЙ РЕЖИМ: МЫ УБРАЛИ ПРОВЕРКУ ДАТЫ !!!
+  // if (now.getFullYear() === 2026 ...) <-- Это закомментировано
+  
+  // Условие всегда true для проверки работы
+  if (true) {
     const data = db.read();
     
-    // Перебираем всех пользователей (получателей)
+    // Если писем нет, ничего не делаем
+    if (data.letters.length === 0) {
+        console.log("📭 Писем пока нет.");
+        return;
+    }
+
     for (const recipient of data.users) {
-      let message = `🎄✨ **С НОВЫМ 2026 ГОДОМ!** ✨🎄\n\nВот письма от твоей семьи:\n\n`;
+      let message = `🎄✨ **ТЕСТОВАЯ РАССЫЛКА (ПРОВЕРКА)** ✨🎄\n\nВот письма от твоей семьи:\n\n`;
       let hasLetters = false;
 
-      // Собираем письма от ВСЕХ остальных (кроме самого себя)
       for (const letter of data.letters) {
-        if (letter.userId !== recipient.id) { // Не отправлять самому себе
+        if (letter.userId !== recipient.id) {
           message += `📩 **От ${letter.username}:**\n"${letter.text}"\n\n`;
           hasLetters = true;
         }
       }
 
+      // Отправляем только если есть чужие письма
       if (hasLetters) {
         try {
           await bot.telegram.sendMessage(recipient.id, message, { parse_mode: 'Markdown' });
-          console.log(`Sent to ${recipient.name}`);
+          console.log(`✅ Отправлено пользователю: ${recipient.name}`);
         } catch (e) {
-          console.error(`Failed to send to ${recipient.name}`, e);
+          console.error(`❌ Ошибка отправки для ${recipient.name}:`, e.message);
         }
       }
     }
@@ -108,9 +119,8 @@ cron.schedule('* * * * *', async () => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Сервер запущен на порту ${PORT}`);
 });
 
-// Обработка остановки
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
