@@ -11,6 +11,7 @@ import media8 from './assets/media/8.jpg';
 import media9 from './assets/media/9.jpg';
 import media10 from './assets/media/10.jpg';
 import media11 from './assets/media/11.jpg';
+import media12 from './assets/media/12.jpg';
 
 export interface FamilyMember {
   name: string;
@@ -128,7 +129,7 @@ export const MEMORIES: Memory[] = [
     title: 'Я знаю ты далеко, между нами города, города',
     description: 'С отцом я общался 1 час 21 минута 50 секунд. Сразу видно, оба занятые люди 😎',
     animationType: 'kaleidoscope',
-    layout: 'top-right'
+    layout: 'centered-float'
   },
   {
     id: 11,
@@ -136,6 +137,15 @@ export const MEMORIES: Memory[] = [
     type: 'image',
     title: 'Я знаю ты далеко, между нами города, города',
     description: 'С любимой Бульбулей мы наобщались целых 1 час 29 минут 18 секунд',
+    animationType: 'bloom',
+    layout: 'side-strip'
+  },
+  {
+    id: 12,
+    source: media12,
+    type: 'image',
+    title: 'Новогоднее чудо!',
+    description: 'Новогодняя фея летит ко всем дарить подарочки!',
     animationType: 'bloom',
     layout: 'top-right'
   },
